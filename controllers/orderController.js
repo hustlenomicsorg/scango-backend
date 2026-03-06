@@ -5,7 +5,7 @@ async function createOrder(req, res) {
   const { items } = req.body || {};
 
   if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: "Missing required fields: items (non-empty array)" });
+    return res.status(400).json({ success: false, message: "Missing required fields: items (non-empty array)" });
   }
 
   try {
@@ -13,7 +13,7 @@ async function createOrder(req, res) {
 
     let total = 0;
     for (const item of items) {
-      if (!item.product_id || !item.quantity || item.quantity <= 0) {
+      if (!item.product_id || !item.qty || item.qty <= 0) {
         throw new Error("Invalid item in items array");
       }
 
@@ -28,15 +28,15 @@ async function createOrder(req, res) {
 
       const product = productRows[0];
 
-      if (product.stock < item.quantity) {
+      if (product.stock < item.qty) {
         throw new Error(`Insufficient stock for product: ${item.product_id}`);
       }
 
-      total += Number(product.price) * item.quantity;
+      total += Number(product.price) * item.qty;
 
       await promiseDb.query(
         "UPDATE products SET stock = stock - ? WHERE id = ?",
-        [item.quantity, item.product_id]
+        [item.qty, item.product_id]
       );
     }
 
@@ -47,50 +47,52 @@ async function createOrder(req, res) {
 
     const orderId = orderResult.insertId;
 
-    // We need to fetch the exact item prices again to store them safely
     const orderItemsValues = [];
     for (const item of items) {
       const [pRows] = await promiseDb.query("SELECT price FROM products WHERE id = ?", [item.product_id]);
-      orderItemsValues.push([orderId, item.product_id, item.quantity, pRows[0].price]);
+      orderItemsValues.push([orderId, item.product_id, item.qty, pRows[0].price]);
     }
 
     await promiseDb.query(
-      "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ?",
+      "INSERT INTO order_items (order_id, product_id, qty, price) VALUES ?",
       [orderItemsValues]
     );
 
     await promiseDb.commit();
 
     res.status(201).json({
-      id: orderId,
-      total: total.toFixed(2),
-      items
+      success: true,
+      data: {
+        id: orderId,
+        total: total.toFixed(2),
+        items
+      }
     });
   } catch (err) {
     console.error(err);
     await promiseDb.rollback();
 
     if (err.message && err.message.startsWith("Product not found")) {
-      return res.status(400).json({ error: err.message });
+      return res.status(400).json({ success: false, message: err.message });
     }
     if (err.message && err.message.startsWith("Insufficient stock")) {
-      return res.status(400).json({ error: err.message });
+      return res.status(400).json({ success: false, message: err.message });
     }
     if (err.message === "Invalid item in items array") {
-      return res.status(400).json({ error: err.message });
+      return res.status(400).json({ success: false, message: err.message });
     }
 
-    res.status(500).json({ error: "Failed to create order" });
+    res.status(500).json({ success: false, message: "Failed to create order" });
   }
 }
 
 async function getOrders(req, res) {
   try {
     const [orders] = await promiseDb.query("SELECT * FROM orders ORDER BY created_at DESC");
-    res.json(orders);
+    res.json({ success: true, data: orders });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to fetch orders" });
+    res.status(500).json({ success: false, message: "Failed to fetch orders" });
   }
 }
 
@@ -99,17 +101,17 @@ async function getOrder(req, res) {
   try {
     const [orders] = await promiseDb.query("SELECT * FROM orders WHERE id = ?", [id]);
     if (orders.length === 0) {
-      return res.status(404).json({ error: "Order not found" });
+      return res.status(404).json({ success: false, message: "Order not found" });
     }
     
     const [items] = await promiseDb.query("SELECT * FROM order_items WHERE order_id = ?", [id]);
     const order = orders[0];
     order.items = items;
     
-    res.json(order);
+    res.json({ success: true, data: order });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to fetch order details" });
+    res.status(500).json({ success: false, message: "Failed to fetch order details" });
   }
 }
 

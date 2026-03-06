@@ -36,7 +36,7 @@ const createTables = () => {
       id INT AUTO_INCREMENT PRIMARY KEY,
       order_id INT,
       product_id INT,
-      quantity INT,
+      qty INT,
       price DECIMAL(10,2)
     )`;
 
@@ -48,6 +48,16 @@ const createTables = () => {
   });
   db.query(orderItemsTable, (err) => {
     if (err) console.error("Error creating order_items table:", err);
+  });
+  
+  // Migration hot-patches
+  db.query("ALTER TABLE products ADD INDEX barcode_index (barcode)", (err) => {
+    // Ignore duplicate key name errors if it already exists
+    if (err && err.code !== 'ER_DUP_KEYNAME') console.error("Error creating barcode_index:", err);
+  });
+  db.query("ALTER TABLE order_items CHANGE quantity qty INT", (err) => {
+    // Ignore column not found errors if it was already migrated
+    if (err && err.code !== 'ER_BAD_FIELD_ERROR') console.error("Error changing quantity to qty:", err);
   });
 };
 
