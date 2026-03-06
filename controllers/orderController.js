@@ -2,10 +2,10 @@ const db = require("../db");
 const promiseDb = db.promise();
 
 async function createOrder(req, res) {
-  const { items, payment_status } = req.body || {};
+  const { items } = req.body || {};
 
-  if (!Array.isArray(items) || items.length === 0 || !payment_status) {
-    return res.status(400).json({ error: "Missing required fields: items (non-empty array), payment_status" });
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "Missing required fields: items (non-empty array)" });
   }
 
   try {
@@ -41,15 +41,21 @@ async function createOrder(req, res) {
     }
 
     const [orderResult] = await promiseDb.query(
-      "INSERT INTO orders (total, payment_status) VALUES (?, ?)",
-      [total.toFixed(2), payment_status]
+      "INSERT INTO orders (total) VALUES (?)",
+      [total.toFixed(2)]
     );
 
     const orderId = orderResult.insertId;
 
-    const orderItemsValues = items.map(item => [orderId, item.product_id, item.quantity]);
+    // We need to fetch the exact item prices again to store them safely
+    const orderItemsValues = [];
+    for (const item of items) {
+      const [pRows] = await promiseDb.query("SELECT price FROM products WHERE id = ?", [item.product_id]);
+      orderItemsValues.push([orderId, item.product_id, item.quantity, pRows[0].price]);
+    }
+
     await promiseDb.query(
-      "INSERT INTO order_items (order_id, product_id, quantity) VALUES ?",
+      "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ?",
       [orderItemsValues]
     );
 
@@ -58,7 +64,6 @@ async function createOrder(req, res) {
     res.status(201).json({
       id: orderId,
       total: total.toFixed(2),
-      payment_status,
       items
     });
   } catch (err) {
@@ -89,7 +94,27 @@ async function getOrders(req, res) {
   }
 }
 
+async function getOrder(req, res) {
+  const { id } = req.params;
+  try {
+    const [orders] = await promiseDb.query("SELECT * FROM orders WHERE id = ?", [id]);
+    if (orders.length === 0) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    
+    const [items] = await promiseDb.query("SELECT * FROM order_items WHERE order_id = ?", [id]);
+    const order = orders[0];
+    order.items = items;
+    
+    res.json(order);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch order details" });
+  }
+}
+
 module.exports = {
   createOrder,
-  getOrders
+  getOrders,
+  getOrder
 };

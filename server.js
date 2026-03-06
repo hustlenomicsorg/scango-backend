@@ -5,7 +5,7 @@ const cors = require("cors");
 const db = require("./db");
 const productRoutes = require("./routes/productRoutes");
 const orderRoutes = require("./routes/orderRoutes");
-const adminRoutes = require("./routes/adminRoutes");
+const statsRoutes = require("./routes/statsRoutes");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -28,7 +28,6 @@ const createTables = () => {
     CREATE TABLE IF NOT EXISTS orders (
       id INT AUTO_INCREMENT PRIMARY KEY,
       total DECIMAL(10,2),
-      payment_status VARCHAR(50),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`;
 
@@ -37,14 +36,8 @@ const createTables = () => {
       id INT AUTO_INCREMENT PRIMARY KEY,
       order_id INT,
       product_id INT,
-      quantity INT
-    )`;
-
-  const adminsTable = `
-    CREATE TABLE IF NOT EXISTS admins (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      username VARCHAR(100),
-      password VARCHAR(255)
+      quantity INT,
+      price DECIMAL(10,2)
     )`;
 
   db.query(productsTable, (err) => {
@@ -56,16 +49,13 @@ const createTables = () => {
   db.query(orderItemsTable, (err) => {
     if (err) console.error("Error creating order_items table:", err);
   });
-  db.query(adminsTable, (err) => {
-    if (err) console.error("Error creating admins table:", err);
-  });
 };
 
 createTables();
 
-app.use(productRoutes);
-app.use(orderRoutes);
-app.use(adminRoutes);
+app.use("/api", productRoutes);
+app.use("/api", orderRoutes);
+app.use("/api", statsRoutes);
 
 app.get("/", (req, res) => {
   res.json({ status: "ScanGo backend running" });
